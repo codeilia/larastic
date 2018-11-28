@@ -3,6 +3,7 @@
 namespace Larastic;
 
 
+use App\Vamyar\ModelNameMapper;
 use App\Vamyar\RelationNameMaps;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
@@ -21,6 +22,7 @@ class RequestHandler
     public $subResources = [];
     public $parsedRelationFilters = [];
     public $parsedFilters = [];
+    public $indexName;
 
     /**
      * RequestHandler constructor.
@@ -31,11 +33,14 @@ class RequestHandler
         $this->request = $request;
 //        $this->paginateOffset = isset($request->cursor) ? base64_decode($request->cursor) : 0;
 //        $this->paginateLimit = $request->number ?? 10;
-        $this->paginateOffset = $request->cursor ??  base64_encode(0);
+//        $this->paginateOffset = $request->cursor ??  base64_encode(0);
+        $this->setPaginateOffset();
         $this->paginateLimit = $request->number ?? 10;
         $this->relationMaps = RelationNameMaps::get();
+//        dd($this->relationMaps);
+        $this->setIndexName();
         $this->setFilters();
-//        $this->setRelationsFilters();
+        $this->setRelationsFilters();
         $this->setOrders();
     }
 
@@ -72,9 +77,10 @@ class RequestHandler
 
 
             $parsedFilters[] = [
-                'name' => $this->getFilterName($splittedFilter[0]),
+                'name' => $this->getFilterName($name = snake_case($splittedFilter[0])),
                 'delimiter' => $this->getFilterDelimiter($filter),
                 'value' => $splittedFilter[1],
+                'relation' => $this->getRelationName($name),
             ];
         }
 
@@ -85,15 +91,16 @@ class RequestHandler
     {
         $filters = isset($this->request->must) ? explode(',', $this->request->must) : [];
 
+
         $parsedFilters = [];
         foreach ($filters as $filter) {
             $splittedFilter = $this->splitFilter($filter);
 
-
             $parsedFilters[] = [
-                'name' => $this->getFilterName($splittedFilter[0]),
+                'name' => $this->getFilterName($name = snake_case($splittedFilter[0])),
                 'delimiter' => $this->getFilterDelimiter($filter),
                 'value' => $splittedFilter[1],
+                'relation' => $this->getRelationName($name),
             ];
         }
 
@@ -255,7 +262,13 @@ class RequestHandler
         $filters = $this->parseFilters();
         $mustFilters = $this->parseMustFilters();
 
+//        $relation = 'relation';
+//        $filed = 'field';
+//        $filterQuery = sprintf('{"nested": {"path": "%s", "query": {"bool": {"must_not": [{"exists": {"field": "%s"}}]}}}}', $relation, $filed);
+//        dd(json_decode($filterQuery, true));
+//        dd(json_decode("{'nested': {'path': 'j_advert', 'query': {'bool': {'must': [{'match': {'j_advert.verified': false}}]}}}}", true));
 //        dd($mustFilters);
+
 
         //this is for prevent duplicating relation filters because relation filters has been stored
         // on $relationsFilters field once
@@ -264,89 +277,235 @@ class RequestHandler
 //                unset($filters[$index]);
 //        }
 
-        foreach ($filters as $filter) {
-            if ($filter['delimiter'] == '!='
-                && ($filter['value'] == 'null'
-                    || $filter['value'] == 'NULL'
-                    || $filter['value'] == null))
-            {
-                $this->filters['bool']['must'][] =  [
-                    'exists' => [
-                        'field' => $filter['name']
-                    ]
-                ];
+        foreach ($filters as $index => $filter) {
+            $relation = $filter['relation'];
 
-                continue;
+            if ($this->hasRelationFilter($filter)) {
+                if ($filter['delimiter'] == '!='
+                    && ($filter['value'] == 'null'
+                        || $filter['value'] == 'NULL'
+                        || $filter['value'] == null))
+                {
+//                    $this->filters['bool']['must'][]['nested']['path'] =  $relation;
+//                    $this->filters['bool']['must'][]['nested']['query']['bool']['must'][] = [
+//                        'exists' => [
+//                            'field' => $filter['name']
+//                        ]
+//                    ];
+
+                    $field = "{$relation}.{$filter['name']}";
+                    $filterQuery = sprintf('{"nested": {"path": "%s", "query": {"bool": {"must": [{"exists": {"field": "%s"}}]}}}}', $relation, $field);
+                    $this->filters['bool']['must'][] = json_decode($filterQuery, true);
+
+                    continue;
+                }
+
+                if ($filter['delimiter'] == '='
+                    && ($filter['value'] == 'null'
+                        || $filter['value'] == 'NULL'
+                        || $filter['value'] == null))
+                {
+//                    $this->filters['bool']['must_not'][]['nested']['path'] =  $relation;
+//                    $this->filters['bool']['must_not'][]['nested']['query']['bool']['must_not'][] = [
+//                        'exists' => [
+//                           'filter' => $filter['name']
+//                        ]
+//                    ];
+
+                    $field = "{$relation}.{$filter['name']}";
+                    $filterQuery = sprintf('{"nested": {"path": "%s", "query": {"exists": {"field": "%s"}}}}', $relation, $field);
+                    $this->filters['bool']['must_not'][] = json_decode($filterQuery, true);
+
+                    continue;
+                }
+
+                if ($filter['delimiter'] == '!=') {
+//                    $this->filters['bool']['must_not'][]['nested']['path'] =  $relation;
+//                    $this->filters['bool']['must_not'][]['nested']['query']['bool']['must_not'][] = [
+//                        'match' => [
+//                            $filter['name'] => $filter['value']
+//                        ]
+//                    ];
+
+                    $field = "{$relation}.{$filter['name']}";
+                    $filterQuery = sprintf(
+                        '{"nested": {"path": "%s", "query": {"constant_score": {"filter": {"term": {"%s": "%s"}}}}}}',
+                        $relation, $field, $filter['value']
+                    );
+                    $this->filters['bool']['must_not'][] = json_decode($filterQuery);
+
+                    continue;
+                }
+
+//                $this->filters['bool']['should'][]['nested']['path'] =  $relation;
+//                $this->filters['bool']['should'][]['nested']['query']['bool']['should'][] = $this->getNestedElasticFilter($filter, $relation);
+
+                //TODO: this might have a bug
+                $filterQuery = sprintf('{"nested": {"path": "%s", "query": {"bool": {"should": [%s]}}}}', $relation, $this->getNestedElasticFilter($filter, $relation, true));
+                $this->filters['bool']['should'][] = json_decode($filterQuery);
             }
+            else {
+                if ($filter['delimiter'] == '!='
+                    && ($filter['value'] == 'null'
+                        || $filter['value'] == 'NULL'
+                        || $filter['value'] == null))
+                {
+                    $this->filters['bool']['must'][] =  [
+                        'exists' => [
+                            'field' => $filter['name']
+                        ]
+                    ];
 
-            if ($filter['delimiter'] == '='
-                && ($filter['value'] == 'null'
-                    || $filter['value'] == 'NULL'
-                    || $filter['value'] == null))
-            {
-                $this->filters['bool']['must_not'][] =  [
-                    'exists' => [
-                        'field' => $filter['name']
-                    ]
-                ];
+                    continue;
+                }
 
-                continue;
+                if ($filter['delimiter'] == '='
+                    && ($filter['value'] == 'null'
+                        || $filter['value'] == 'NULL'
+                        || $filter['value'] == null))
+                {
+                    $this->filters['bool']['must_not'][] =  [
+                        'exists' => [
+                            'field' => $filter['name']
+                        ]
+                    ];
+
+                    continue;
+                }
+
+                if ($filter['delimiter'] == '!=') {
+                    $this->filters['bool']['must_not'][] =  [
+                        'match' => [
+                            $filter['name'] => $filter['value']
+                        ]
+                    ];
+
+                    continue;
+                }
+
+                $this->filters['bool']['should'][] = $this->getElasticFilter($filter);
             }
-
-            if ($filter['delimiter'] == '!=') {
-                $this->filters['bool']['must_not'][] =  [
-                    'match' => [
-                        $filter['name'] => $filter['value']
-                    ]
-                ];
-
-                continue;
-            }
-
-            $this->filters['bool']['should'][] = $this->getElasticFilter($filter);
         }
 
+//            $this->filters['bool']['should'][] = $this->getElasticFilter($filter);
+
+//        dd($this->request);
         foreach ($mustFilters as $index => $mustFilter) {
-            if ($mustFilter['delimiter'] == '!='
-                && ($mustFilter['value'] == 'null'
-                    || $mustFilter['value'] == 'NULL'
-                    || $mustFilter['value'] == null))
-            {
-                $this->filters['bool']['must'][] =  [
-                    'exists' => [
-                        'field' => $mustFilter['name']
-                    ]
-                ];
+            $relation = $mustFilter['relation'];
 
-                continue;
+            if ($this->hasRelationFilter($mustFilter)) {
+                if ($mustFilter['delimiter'] == '!='
+                    && ($mustFilter['value'] == 'null'
+                        || $mustFilter['value'] == 'NULL'
+                        || $mustFilter['value'] == null))
+                {
+//                    $this->filters['bool']['must'][]['nested']['path'] =  $relation;
+//                    $this->filters['bool']['must'][]['nested']['query']['bool']['must'][] = [
+//                        'exists' => [
+//                            'field' => $mustFilter['name']
+//                        ]
+//                    ];
+
+                    $field = "{$relation}.{$mustFilter['name']}";
+                    $mustQuery = sprintf('{"nested": {"path": "%s", "query": {"bool": {"must": [{"exists": {"field": "%s"}}]}}}}', $relation, $field);
+                    $this->filters['bool']['must'][] = json_decode($mustQuery, true);
+
+                    continue;
+                }
+
+                if ($mustFilter['delimiter'] == '='
+                    && ($mustFilter['value'] == 'null'
+                        || $mustFilter['value'] == 'NULL'
+                        || $mustFilter['value'] == null))
+                {
+//                    $this->filters['bool']['must_not'][]['nested']['path'] =  $relation;
+//                    $this->filters['bool']['must_not'][]['nested']['query']['bool']['must_not'][] = [
+//                        'exists' => [
+//                            'field' => $mustFilter['name']
+//                        ]
+//                    ];
+
+//                    $field = "{$relation}.{$mustFilter['name']}";
+//                    $mustQuery = sprintf('{"nested": {"path": "%s", "query": {"bool": {"must_not": [{"exists": {"field": "%s"}}]}}}}', $relation, $field);
+//                    $this->filters['bool']['must_not'][] = json_decode($mustQuery, true);
+
+                    $field = "{$relation}.{$mustFilter['name']}";
+                    $mustQuery = sprintf('{"nested": {"path": "%s", "query": {"exists": {"field": "%s"}}}}', $relation, $field);
+                    $this->filters['bool']['must_not'][] = json_decode($mustQuery, true);
+
+                    continue;
+                }
+
+                if ($mustFilter['delimiter'] == '!=') {
+//                    $this->filters['bool']['must_not'][]['nested']['path'] =  $relation;
+//                    $this->filters['bool']['must_not'][]['nested']['query']['bool']['must_not'][] = [
+//                        'match' => [
+//                            'field' => $mustFilter['name']
+//                        ]
+//                    ];
+
+//                    $mustQuery = json_decode("{'nested': {'path': '{$relation}', 'query': {'bool': {'must_not': [{'match': {'{$mustFilter['name']}': {$mustFilter['value']}}}]}}}}", true);
+//                    $this->filters['bool']['must_not'][] = $mustQuery;
+
+//                    $field = "{$relation}.{$mustFilter['name']}";
+//                    $mustQuery = sprintf('{"nested": {"path": "%s", "query": {"bool": {"must_not": [{"match": {"%s": "%s"}}]}}}}', $relation, $field, $mustFilter['value']);
+//                    $this->filters['bool']['must_not'][] = json_decode($mustQuery);
+
+                    $field = "{$relation}.{$mustFilter['name']}";
+                    $mustQuery = sprintf(
+                        '{"nested": {"path": "%s", "query": {"constant_score": {"filter": {"term": {"%s": "%s"}}}}}}',
+                        $relation, $field, $mustFilter['value']
+                    );
+                    $this->filters['bool']['must_not'][] = json_decode($mustQuery);
+
+                    continue;
+                }
+
+                $filterQuery = sprintf('{"nested": {"path": "%s", "query": {"bool": {"must": [%s]}}}}', $relation, $this->getNestedElasticFilter($mustFilter, $relation, true));
+                $this->filters['bool']['must'][] = json_decode($filterQuery);
             }
+            else {
+                if ($mustFilter['delimiter'] == '!='
+                    && ($mustFilter['value'] == 'null'
+                        || $mustFilter['value'] == 'NULL'
+                        || $mustFilter['value'] == null))
+                {
+                    $this->filters['bool']['must'][] =  [
+                        'exists' => [
+                            'field' => $mustFilter['name']
+                        ]
+                    ];
 
-            if ($mustFilter['delimiter'] == '='
-                && ($mustFilter['value'] == 'null'
-                    || $mustFilter['value'] == 'NULL'
-                    || $mustFilter['value'] == null))
-            {
-                $this->filters['bool']['must_not'][] =  [
-                    'exists' => [
-                        'field' => $mustFilter['name']
-                    ]
-                ];
+                    continue;
+                }
 
-                continue;
+                if ($mustFilter['delimiter'] == '='
+                    && ($mustFilter['value'] == 'null'
+                        || $mustFilter['value'] == 'NULL'
+                        || $mustFilter['value'] == null))
+                {
+                    $this->filters['bool']['must_not'][] =  [
+                        'exists' => [
+                            'field' => $mustFilter['name']
+                        ]
+                    ];
+
+                    continue;
+                }
+
+                if ($mustFilter['delimiter'] == '!=') {
+                    $this->filters['bool']['must_not'][] =  [
+                        'match' => [
+                            $mustFilter['name'] => $mustFilter['value']
+                        ]
+                    ];
+
+                    continue;
+                }
+
+                $this->filters['bool']['must'][] = $this->getElasticFilter($mustFilter);
             }
-
-            if ($mustFilter['delimiter'] == '!=') {
-                $this->filters['bool']['must_not'][] =  [
-                    'match' => [
-                        $mustFilter['name'] => $mustFilter['value']
-                    ]
-                ];
-
-                continue;
-            }
-            $this->filters['bool']['must'][] = $this->getElasticFilter($mustFilter);
         }
-
 
         $this->parsedFilters = $filters;
     }
@@ -379,7 +538,6 @@ class RequestHandler
 
         if (empty($this->filters['bool']['must']))
             unset($this->filters['bool']['must']);
-
 
         return $this->filters;
 
@@ -508,10 +666,12 @@ class RequestHandler
         // this is for situation that a middleware filters query! ugly but works :)
         if (empty($this->filters))
             $this->setFilters();
-//        if (empty($this->relationsFilters))
-//            $this->setRelationsFilters();
+        if (empty($this->relationsFilters))
+            $this->setRelationsFilters();
         if (empty($this->orders))
             $this->setOrders();
+
+//        dd($this->paginateOffset);
 
         return [
             'from' => $this->getCursor(),
@@ -527,19 +687,120 @@ class RequestHandler
         return preg_split('/=/', $must);
     }
 
-    private function getFilterName($name)
+    private function isRelationFilter($filter)
     {
-        if (preg_match('/.+(\.).+/', $name)) {
-            foreach ($this->relationMaps as $key => $value) {
-                if (preg_match('/'. $key . '\.(.*)/', $name)) {
-                    $name = preg_replace(
-                        '/' . $key . '\.(.*)/',
-                        $value . '.$1',
-                        $name
-                    );
-                }
-            }
+        if (is_array($filter))
+            return array_key_exists("relation", $filter) && $filter['relation'] != null;
+
+        return !! preg_match('/(.+)\.(.+)/', $filter);
+    }
+
+    private function hasRelationFilter($filter)
+    {
+        return $filter['relation'] != null;
+    }
+
+    private function getFilterName($filter)
+    {
+//        if (preg_match('/.+(\.).+/', $name)) {
+//            foreach ($this->relationMaps as $key => $value) {
+//                if (preg_match('/'. $key . '\.(.*)/', $name)) {
+//                    $name = preg_replace(
+//                        '/' . $key . '\.(.*)/',
+//                        $value . '.$1',
+//                        $name
+//                    );
+//                }
+//            }
+//        }
+
+        if ($this->isRelationFilter($filter))
+            return preg_replace('/(.*)\.(.*)/', '$2', $filter);
+
+
+        return snake_case($filter);
+    }
+
+
+    private function getRelationName($filter)
+    {
+        $filterName = is_array($filter) ? $filter['name'] : $filter;
+
+//        dd($this->isRelationFilter($filter));
+//        $relationName = preg_replace('/(.*)\.(.*)/', '$1', $filter);
+//        dd(array_key_exists($relationName, $this->relationMaps));
+        if ($this->isRelationFilter($filter)) {
+            $relationName = preg_replace('/(.*)\.(.*)/', '$1', $filterName);
+            if (array_key_exists($relationName, $this->relationMaps))
+                return $this->relationMaps[$relationName];
+
+            return preg_replace('/(.*)\.(.*)/', '$1', $filterName);
         }
-        return snake_case($name);
+
+        return null;
+    }
+
+//    private function getIndexName($name)
+//    {
+//        return preg_replace('/(.*)\.(.*)/', '$1', $name);
+//    }
+
+    private function getNestedElasticFilter($filter, $relation, $json = true)
+    {
+        $query = [];
+        $field = "{$relation}.{$filter['name']}";
+
+        switch ($filter['delimiter']) {
+            case '=':
+                $query['match'] = [
+                    $field => $filter['value']
+                ];
+//                $query['path'] = $relation;
+                break;
+
+            case '>':
+                $query['range'] = [
+                    $field => [
+                        'gte' => $filter['value']
+                    ]
+                ];
+//                $query['path'] = $relation;
+                break;
+
+            case '<':
+                $query['range'] = [
+                    $field => [
+                        'lte' => $filter['value']
+                    ]
+                ];
+//                $query['path'] = $relation;
+                break;
+        }
+
+        if ($json)
+            return json_encode($query);
+
+        return $query;
+    }
+
+    private function setIndexName()
+    {
+        $controllerClass = $this->request->route()->getAction()['controller'];
+        list($controller, $action) = explode('@', $controllerClass);
+
+        return preg_replace('/(.*)\\\(.*)Controller/', '$2', $controller);
+
+//         $this->indexName = ModelNameMapper::indexName(
+//            $this->request->route()->controller->model
+//        );
+
+    }
+
+    private function setPaginateOffset()
+    {
+//        if ($this->request->paginate)
+//            return $this->paginateOffset = $this->request->page ?? base64_encode(0);
+
+        return $this->paginateOffset = $this->request->cursor ??  base64_encode(0);
     }
 }

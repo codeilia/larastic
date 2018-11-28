@@ -137,13 +137,18 @@ trait Searchable
         return $this->highlight;
     }
 
-    public static function dynamicSearch()
+    public static function dynamicSearch($paginate = false)
     {
         $requestHandler = resolve('RequestHandler');
 
         $query = $requestHandler->getSearchParams();
 
         $searcResult = static::searchRaw($query);
+
+//        dd($requestHandler->paginateLimit);
+
+//        dd($searcResult);
+
 
         $hits = $searcResult['hits']['hits'];
 
@@ -158,6 +163,9 @@ trait Searchable
             $model = $model->with($requestHandler->parseIncludes($model));
 
         $model = $model->whereIn('id', $ids);
+
+//        if ($paginate)
+//            static::paginateResult($model, );
 
 //        if (! empty($requestHandler->relationsFilters)) {
 ////            $model = $model->whereHas($requestHandler->relationsFilters[0]['relation'], function ($query) use ($requestHandler->relationsFilters) {
@@ -175,6 +183,9 @@ trait Searchable
 
         $model = static::setOrders($model, $requestHandler->parseOrders());
 
+        $model->elasticHits = $searcResult['hits'];
+        $model->number = $requestHandler->paginateLimit;
+        $model->page = $requestHandler->request->page;
 
         return $model;
     }
@@ -185,5 +196,10 @@ trait Searchable
             $model->orderBy($order['field'], $order['order']);
         }
         return $model;
+    }
+
+    public static function paginateResult()
+    {
+
     }
 }
