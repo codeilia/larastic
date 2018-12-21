@@ -40,7 +40,7 @@ class RequestHandler
 //        dd($this->relationMaps);
         $this->setIndexName();
         $this->setFilters();
-        $this->setRelationsFilters();
+//        $this->setRelationsFilters();
         $this->setOrders();
     }
 
@@ -74,7 +74,6 @@ class RequestHandler
         $parsedFilters = [];
         foreach ($filters as $filter) {
             $splittedFilter = $this->splitFilter($filter);
-
 
             $parsedFilters[] = [
                 'name' => $this->getFilterName($name = snake_case($splittedFilter[0])),

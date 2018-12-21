@@ -143,12 +143,15 @@ trait Searchable
 
         $query = $requestHandler->getSearchParams();
 
+//        dd(request()->query());
+
+//        dd(json_encode($query));
+
         $searcResult = static::searchRaw($query);
 
 //        dd($requestHandler->paginateLimit);
 
 //        dd($searcResult);
-
 
         $hits = $searcResult['hits']['hits'];
 
