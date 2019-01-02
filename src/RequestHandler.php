@@ -294,7 +294,8 @@ class RequestHandler
 
                     $field = "{$relation}.{$filter['name']}";
                     $filterQuery = sprintf('{"nested": {"path": "%s", "query": {"bool": {"must": [{"exists": {"field": "%s"}}]}}}}', $relation, $field);
-                    $this->filters['bool']['must'][] = json_decode($filterQuery, true);
+//                    $this->filters['bool']['must'][] = json_decode($filterQuery, true);
+                    $this->filters['bool']['must'][]['bool'] = json_decode($filterQuery, true);
 
                     continue;
                 }
@@ -340,8 +341,11 @@ class RequestHandler
 //                $this->filters['bool']['should'][]['nested']['query']['bool']['should'][] = $this->getNestedElasticFilter($filter, $relation);
 
                 //TODO: this might have a bug
-                $filterQuery = sprintf('{"nested": {"path": "%s", "query": {"bool": {"should": [%s]}}}}', $relation, $this->getNestedElasticFilter($filter, $relation, true));
-                $this->filters['bool']['should'][] = json_decode($filterQuery);
+                $filterQuery = sprintf('{"nested": {"path": "%s", "query": {"bool": {"must": [%s]}}}}', $relation, $this->getNestedElasticFilter($filter, $relation, true));
+//                $this->filters['bool']['should'][] = json_decode($filterQuery);
+//                should change to this:
+//                $this->filters['bool']['must']['bool']['should'][] = json_decode($filterQuery);
+                $this->filters['bool']['must'][]['bool']['should'][] = json_decode($filterQuery);
             }
             else {
                 if ($filter['delimiter'] == '!='
@@ -382,7 +386,11 @@ class RequestHandler
                     continue;
                 }
 
-                $this->filters['bool']['should'][] = $this->getElasticFilter($filter);
+//                $this->filters['bool']['should'][] = $this->getElasticFilter($filter);
+
+                //new:
+//                $this->filters['bool']['must']['bool']['should'][] = $this->getElasticFilter($filter);
+                $this->filters['bool']['must'][]['bool']['should'][] = $this->getElasticFilter($filter);
             }
         }
 
@@ -502,7 +510,9 @@ class RequestHandler
                     continue;
                 }
 
+//                dd($this->getElasticFilter($mustFilter));
                 $this->filters['bool']['must'][] = $this->getElasticFilter($mustFilter);
+//                dd($this->filters);
             }
         }
 
