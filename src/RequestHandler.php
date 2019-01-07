@@ -171,9 +171,13 @@ class RequestHandler
         }
 
         return [
-            0 => ['field' => 'created_at', 'order' => 'desc'],
-            1 => ['field' => 'id', 'order' => 'desc']
+            0 => ['field' => 'ladder_at', 'order' => 'desc'],
         ];
+
+//        return [
+//            0 => ['field' => 'created_at', 'order' => 'desc'],
+//            1 => ['field' => 'id', 'order' => 'desc']
+//        ];
     }
 
 
@@ -390,9 +394,17 @@ class RequestHandler
 
                 //new:
 //                $this->filters['bool']['must']['bool']['should'][] = $this->getElasticFilter($filter);
+                if ($this->hasBoolShouldKey($this->filters)) {
+//                    $currentShould = $this->filters['bool']['must'][0]['bool']['should'];
+                    $this->filters['bool']['must'][0]['bool']['should'][] = $this->getElasticFilter($filter);
+                    continue;
+                }
+
                 $this->filters['bool']['must'][]['bool']['should'][] = $this->getElasticFilter($filter);
             }
         }
+
+//        dd($this->filters['bool']['must']);
 
 //            $this->filters['bool']['should'][] = $this->getElasticFilter($filter);
 
@@ -794,10 +806,10 @@ class RequestHandler
 
     private function setIndexName()
     {
-        $controllerClass = $this->request->route()->getAction()['controller'];
-        list($controller, $action) = explode('@', $controllerClass);
-
-        return preg_replace('/(.*)\\\(.*)Controller/', '$2', $controller);
+//        $controllerClass = $this->request->route()->getAction()['controller'];
+//        list($controller, $action) = explode('@', $controllerClass);
+//
+//        return preg_replace('/(.*)\\\(.*)Controller/', '$2', $controller);
 
 //         $this->indexName = ModelNameMapper::indexName(
 //            $this->request->route()->controller->model
@@ -811,5 +823,26 @@ class RequestHandler
 //            return $this->paginateOffset = $this->request->page ?? base64_encode(0);
 
         return $this->paginateOffset = $this->request->cursor ??  base64_encode(0);
+    }
+
+    private function hasBoolShouldKey($filters)
+    {
+        if (! array_key_exists('bool', $filters))
+            return false;
+
+        if (! array_key_exists('must', $filters['bool']))
+            return false;
+
+        foreach ($filters['bool']['must'] as $must) {
+            if (array_key_exists('bool', $must)) {
+                foreach ($must['bool'] as $key => $bool) {
+                    if ($key === 'should') {
+                        return true;
+                    };
+                }
+            }
+        }
+
+        return false;
     }
 }

@@ -147,6 +147,7 @@ trait Searchable
 
 //        dd(json_encode($query));
 
+
         $searcResult = static::searchRaw($query);
 
 //        dd($requestHandler->paginateLimit);
@@ -155,17 +156,24 @@ trait Searchable
 
         $hits = $searcResult['hits']['hits'];
 
+//        dd($hits);
+
         $ids = [];
         array_walk($hits, function ($hit)  use (&$ids) {
             $ids[] = $hit['_source']['id'];
         });
+
+//        dd($ids);
 
         $model = new static;
 
         if (isset($requestHandler->request->include))
             $model = $model->with($requestHandler->parseIncludes($model));
 
+//        dd($ids);
+//        dd($model->whereIn('id', $ids)->get());
         $model = $model->whereIn('id', $ids);
+
 
 //        if ($paginate)
 //            static::paginateResult($model, );
@@ -198,6 +206,7 @@ trait Searchable
         foreach ($orders as $order) {
             $model->orderBy($order['field'], $order['order']);
         }
+
         return $model;
     }
 
