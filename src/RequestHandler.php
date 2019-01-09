@@ -162,7 +162,7 @@ class RequestHandler
             foreach ($orders as $order) {
                 $order = explode(':', $order);
                 $parsedOrders[] = [
-                    'field' => snake_case($order[0]),
+                    'field' => $this->getOrderField(snake_case($order[0])),
                     'order' => $order[1],
                 ];
             }
@@ -170,14 +170,14 @@ class RequestHandler
             return $parsedOrders;
         }
 
-        return [
-            0 => ['field' => 'ladder_at', 'order' => 'desc'],
-        ];
-
 //        return [
-//            0 => ['field' => 'created_at', 'order' => 'desc'],
-//            1 => ['field' => 'id', 'order' => 'desc']
+//            0 => ['field' => 'ladder_at', 'order' => 'desc'],
 //        ];
+
+        return [
+            0 => ['field' => 'created_at', 'order' => 'desc'],
+            1 => ['field' => 'id', 'order' => 'desc']
+        ];
     }
 
 
@@ -569,13 +569,23 @@ class RequestHandler
     {
         $orders = $this->parseOrders();
 
-        foreach ($orders as $order) {
-            $this->orders[] = [
+//        $orders[0]['field'] = preg_replace("/{$order['field']}/", 'j_advertable', $orders[0]['field']);
+
+//        dd($orders);
+
+        foreach ($orders as $index => $order) {
+            $this->orders[$index] = [
                 $order['field'] => [
                     'order' => $order['order']
                 ]
             ];
+
+//            dd($this->isRelationOrder($order));
+
+            if ($this->isRelationOrder($order))
+                $this->orders[$index][$order['field']]['nested_path'] = $this->getOrderRelationName($order);
         }
+
     }
 
     public function getIdOrder()
@@ -844,5 +854,35 @@ class RequestHandler
         }
 
         return false;
+    }
+
+    private function getOrderField($order)
+    {
+        if (! preg_match('/(.+)\.(.+)/', $order))
+            return $order;
+
+        return $this->getRelationOrder($order);
+    }
+
+    private function getRelationOrder($order)
+    {
+        $splittedOrder = preg_split('/\./', $order);
+
+        $order = preg_replace("/{$splittedOrder[0]}/", $this->relationMaps[$splittedOrder[0]], $order);
+
+//       return $order;
+        return $order;
+    }
+
+    public function isRelationOrder($order)
+    {
+        return !! preg_match('/(.+)\.(.+)/', $order['field']);
+    }
+
+    public function getOrderRelationName($order)
+    {
+        $order = preg_split('/\./', $order['field']);
+
+        return $order[0];
     }
 }

@@ -203,15 +203,41 @@ trait Searchable
 
     public static function setOrders($model, $orders)
     {
+//        dd($orders);
+//        foreach ($orders as $order) {
+//            $model->orderBy($order['field'], $order['order']);
+//        }
+//
+//        return $model;
+
+
         foreach ($orders as $order) {
-            $model->orderBy($order['field'], $order['order']);
+            if (static::isRelationOrder($order)) {
+
+                $relation = static::getOrderRelationName($order);
+
+//                dd($order);
+
+                $field = static::getOrderRelationField($order);
+
+                $model->orderBy("{$relation}->{$field}", $order['order']);
+            }
+            else
+                $model->orderBy($order['field'], $order['order']);
         }
 
         return $model;
     }
 
-    public static function paginateResult()
-    {
-
-    }
+//    public static function isRelationOrder($order)
+//    {
+//        return !! preg_match('/(.+)\.(.+)/', $order['field']);
+//    }
+//
+//    public static function getOrderRelationName($order)
+//    {
+//        $order = preg_split('/\./', $order['field']);
+//
+//        return static::mapOrderName($order[0]);
+//    }
 }
