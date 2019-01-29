@@ -15,7 +15,7 @@ class FilterBuilder extends Builder
      */
     public $wheres = [
         'must' => [],
-//        'should' => [],
+        'should' => [],
         'must_not' => []
     ];
 

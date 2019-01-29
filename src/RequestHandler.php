@@ -349,6 +349,15 @@ class RequestHandler
 //                $this->filters['bool']['should'][] = json_decode($filterQuery);
 //                should change to this:
 //                $this->filters['bool']['must']['bool']['should'][] = json_decode($filterQuery);
+//                $this->filters['bool']['must'][]['bool']['should'][] = json_decode($filterQuery);
+
+
+                if ($this->hasBoolShouldKey($this->filters)) {
+//                    $currentShould = $this->filters['bool']['must'][0]['bool']['should'];
+                    $this->filters['bool']['must'][0]['bool']['should'][] = json_decode($filterQuery);
+                    continue;
+                }
+
                 $this->filters['bool']['must'][]['bool']['should'][] = json_decode($filterQuery);
             }
             else {
